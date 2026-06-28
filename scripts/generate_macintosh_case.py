@@ -22,7 +22,7 @@ class Params:
     lcd_height: float = 160.0
     lcd_depth_allowance: float = 8.0
 
-    body_width: float = 226.0
+    body_width: float = 230.0
     body_depth: float = 285.0
     body_height: float = 275.0
     body_corner_radius: float = 2.0
@@ -31,8 +31,9 @@ class Params:
     front_tilt_deg: float = -12.0
 
     screen_z: float = 92.0
-    screen_bezel_x: float = 4.0
-    screen_bezel_y: float = 14.0
+    screen_flat_frame_width: float = 5.0
+    screen_bezel_slope_width: float = 3.0
+    screen_bezel_recess_depth: float = 3.0
     screen_lower_forward_y: float = -28.0
 
     io_z: float = 50.0
@@ -108,6 +109,87 @@ def slanted_box(width: float, depth: float, height: float, x: float, y: float, z
     return shape
 
 
+def slanted_rect_frame(
+    outer_width: float,
+    outer_height: float,
+    inner_width: float,
+    inner_height: float,
+    depth: float,
+    x_center: float,
+    y: float,
+    z: float,
+):
+    """Flat rectangular frame on the tilted front plane."""
+    outer_left = -outer_width / 2.0
+    outer_right = outer_width / 2.0
+    inner_left = -inner_width / 2.0
+    inner_right = inner_width / 2.0
+    margin_z = (outer_height - inner_height) / 2.0
+    inner_bottom = margin_z
+    inner_top = margin_z + inner_height
+
+    def v(px: float, py: float, pz: float) -> App.Vector:
+        return App.Vector(px, py, pz)
+
+    faces = []
+    quads = [
+        [v(outer_left, 0, 0), v(outer_right, 0, 0), v(inner_right, 0, inner_bottom), v(inner_left, 0, inner_bottom)],
+        [v(outer_right, 0, outer_height), v(outer_left, 0, outer_height), v(inner_left, 0, inner_top), v(inner_right, 0, inner_top)],
+        [v(outer_left, 0, outer_height), v(outer_left, 0, 0), v(inner_left, 0, inner_bottom), v(inner_left, 0, inner_top)],
+        [v(outer_right, 0, 0), v(outer_right, 0, outer_height), v(inner_right, 0, inner_top), v(inner_right, 0, inner_bottom)],
+    ]
+    for quad in quads:
+        faces.append(Part.Face(Part.makePolygon(quad + [quad[0]])))
+
+    shape = Part.makeCompound(faces)
+    shape.Placement = App.Placement(
+        App.Vector(x_center, y, z),
+        App.Rotation(App.Vector(1, 0, 0), P.front_tilt_deg),
+    )
+    return shape
+
+
+def slanted_bezel_frame(
+    outer_width: float,
+    outer_height: float,
+    inner_width: float,
+    inner_height: float,
+    recess_depth: float,
+    x: float,
+    y: float,
+    z: float,
+):
+    """Four equal-width faces that slope inward to the LCD opening."""
+    outer_left = -outer_width / 2.0
+    outer_right = outer_width / 2.0
+    inner_left = -inner_width / 2.0
+    inner_right = inner_width / 2.0
+    margin_z = (outer_height - inner_height) / 2.0
+    inner_bottom = margin_z
+    inner_top = margin_z + inner_height
+
+    def v(px: float, py: float, pz: float) -> App.Vector:
+        return App.Vector(px, py, pz)
+
+    faces = []
+    quads = [
+        # bottom, top, left, right
+        [v(outer_left, 0, 0), v(outer_right, 0, 0), v(inner_right, recess_depth, inner_bottom), v(inner_left, recess_depth, inner_bottom)],
+        [v(outer_right, 0, outer_height), v(outer_left, 0, outer_height), v(inner_left, recess_depth, inner_top), v(inner_right, recess_depth, inner_top)],
+        [v(outer_left, 0, outer_height), v(outer_left, 0, 0), v(inner_left, recess_depth, inner_bottom), v(inner_left, recess_depth, inner_top)],
+        [v(outer_right, 0, 0), v(outer_right, 0, outer_height), v(inner_right, recess_depth, inner_top), v(inner_right, recess_depth, inner_bottom)],
+    ]
+    for quad in quads:
+        faces.append(Part.Face(Part.makePolygon(quad + [quad[0]])))
+
+    shape = Part.makeCompound(faces)
+    shape.Placement = App.Placement(
+        App.Vector(x, y, z),
+        App.Rotation(App.Vector(1, 0, 0), P.front_tilt_deg),
+    )
+    return shape
+
+
 def front_y_at(z: float) -> float:
     # Approximate the slanted front plane. The lower front is forward, while
     # the screen top recedes toward the body like the reference photo.
@@ -115,7 +197,8 @@ def front_y_at(z: float) -> float:
 
 
 def make_main_shell():
-    front_top_z = P.screen_z + P.lcd_height + P.screen_bezel_y + 2
+    screen_margin = P.screen_flat_frame_width + P.screen_bezel_slope_width
+    front_top_z = P.screen_z + P.lcd_height + screen_margin + 2
     front_bottom_z = 58
     front_lower_y = front_y_at(front_bottom_z)
     front_step_rear_y = -11
@@ -157,8 +240,8 @@ def make_main_shell():
         App.Vector(-P.body_width / 2.0 + 21, 24, -8),
     )
 
-    recess_w = P.lcd_width + 2 * P.screen_bezel_x
-    recess_h = P.lcd_height + 2 * P.screen_bezel_y
+    recess_w = P.lcd_width + 2 * screen_margin
+    recess_h = P.lcd_height + 2 * screen_margin
     screen_cut = slanted_box(
         P.lcd_width + 3,
         42,
@@ -172,8 +255,8 @@ def make_main_shell():
         16,
         recess_h,
         -recess_w / 2.0,
-        front_y_at(P.screen_z - P.screen_bezel_y) - 10,
-        P.screen_z - P.screen_bezel_y,
+        front_y_at(P.screen_z - screen_margin) - 10,
+        P.screen_z - screen_margin,
     )
 
     io_cut = slanted_box(126, 18, 27, -20, front_y_at(P.io_z) - 12, P.io_z - 4)
@@ -244,35 +327,40 @@ def add_front_visuals(doc, colors):
     glass = colors["glass"]
     metal = colors["metal"]
 
-    recess_w = P.lcd_width + 2 * P.screen_bezel_x
-    recess_h = P.lcd_height + 2 * P.screen_bezel_y
-    recess = slanted_box(
-        recess_w,
-        2.0,
-        recess_h,
-        -recess_w / 2.0,
-        front_y_at(P.screen_z - P.screen_bezel_y) + 0.5,
-        P.screen_z - P.screen_bezel_y,
-    )
-    active_cut = slanted_box(
-        P.lcd_width,
-        6.0,
-        P.lcd_height,
-        -P.lcd_width / 2.0,
-        front_y_at(P.screen_z) - 0.8,
-        P.screen_z,
-    )
-    add_shape(doc, "sloped_white_screen_bezel_surface", recess.cut(active_cut), shadow)
-    add_shape(doc, "sloped_black_lcd_bezel_visual", slanted_box(P.lcd_width, 0.9, P.lcd_height, -P.lcd_width / 2.0, front_y_at(P.screen_z) + 3.0, P.screen_z), black)
-    add_shape(doc, "lcd_dark_glass_visual", slanted_box(P.lcd_width - 12, 0.8, P.lcd_height - 12, -P.lcd_width / 2.0 + 6, front_y_at(P.screen_z + 6) + 3.8, P.screen_z + 6), glass)
+    total_margin = P.screen_flat_frame_width + P.screen_bezel_slope_width
+    outer_w = P.lcd_width + 2 * total_margin
+    outer_h = P.lcd_height + 2 * total_margin
+    slope_outer_w = P.lcd_width + 2 * P.screen_bezel_slope_width
+    slope_outer_h = P.lcd_height + 2 * P.screen_bezel_slope_width
+    outer_y = front_y_at(P.screen_z - total_margin) + 0.6
+    outer_z = P.screen_z - total_margin
 
-    active_w = P.lcd_width - 20
-    active_h = P.lcd_height - 22
-    add_shape(doc, "screen_dark_title_bar", slanted_box(active_w, 0.5, 18, -active_w / 2.0, front_y_at(P.screen_z + active_h) + 4.4, P.screen_z + active_h), (0.08, 0.08, 0.14, 0))
-    add_shape(doc, "screen_light_document", slanted_box(112, 0.5, 76, -40, front_y_at(P.screen_z + 36) + 4.2, P.screen_z + 36), (0.82, 0.86, 0.88, 0))
-    add_shape(doc, "screen_right_panel", slanted_box(34, 0.5, 96, 66, front_y_at(P.screen_z + 35) + 4.1, P.screen_z + 35), (0.70, 0.74, 0.79, 0))
-    for i in range(7):
-        add_shape(doc, f"screen_document_line_{i + 1}", slanted_box(82 - (i % 3) * 8, 0.5, 1.3, -30, front_y_at(P.screen_z + 96 - i * 8) + 4.0, P.screen_z + 96 - i * 8), (0.44, 0.48, 0.53, 0))
+    flat_frame = slanted_rect_frame(
+        outer_w,
+        outer_h,
+        slope_outer_w,
+        slope_outer_h,
+        0.8,
+        0,
+        outer_y,
+        outer_z,
+    )
+    add_shape(doc, "flat_white_screen_frame_surface", flat_frame, white)
+
+    bevel = slanted_bezel_frame(
+        slope_outer_w,
+        slope_outer_h,
+        P.lcd_width,
+        P.lcd_height,
+        P.screen_bezel_recess_depth,
+        0,
+        front_y_at(P.screen_z - P.screen_bezel_slope_width) + 0.6,
+        P.screen_z - P.screen_bezel_slope_width,
+    )
+    add_shape(doc, "sloped_white_screen_bezel_surface", bevel, shadow)
+    inner_y = front_y_at(P.screen_z) + P.screen_bezel_recess_depth
+    add_shape(doc, "sloped_black_lcd_bezel_visual", slanted_box(P.lcd_width, 0.9, P.lcd_height, -P.lcd_width / 2.0, inner_y, P.screen_z), black)
+    add_shape(doc, "lcd_dark_glass_visual", slanted_box(P.lcd_width - 12, 0.8, P.lcd_height - 12, -P.lcd_width / 2.0 + 6, inner_y + 0.8, P.screen_z + 6), glass)
 
     add_shape(doc, "front_io_recess_shadow", slanted_box(126, 0.8, 26, -20, front_y_at(P.io_z) - 1.8, P.io_z - 3), shadow)
     add_shape(doc, "front_usb_a_left", slanted_box(22, 0.45, 10, -12, front_y_at(P.io_z + 4) - 2.4, P.io_z + 4), black)
@@ -311,7 +399,6 @@ def add_top_side_back_visuals(doc, colors):
     metal = colors["metal"]
 
     add_shape(doc, "top_handle_recess_floor", rounded_box(112, 108, 1.2, 2.0, App.Vector(-56, P.body_depth * 0.49, P.body_height - 34.8)), shadow)
-    add_shape(doc, "top_handle_finger_shadow", rounded_box(70, 24, 7, 1.0, App.Vector(-35, P.body_depth * 0.49 + 84, P.body_height - 32.5)), black)
 
     for side_name, x in (("left", -P.body_width / 2.0 - 0.6), ("right", P.body_width / 2.0 - 0.6)):
         for row in range(6):

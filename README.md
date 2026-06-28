@@ -23,7 +23,7 @@ The mechanical constraint is the salvaged iPad LCD:
 
 The generated enclosure is:
 
-- Body: 226 x 285 x 275 mm
+- Body: 230 x 285 x 275 mm
 - Front face tilt: 12 degrees
 - Shell wall: 3 mm
 - Soft edge radius: 0.45 mm
@@ -43,8 +43,8 @@ The generated enclosure is:
   and clipped rear top corners.
 - Clean top surface with a deeper 126 x 128 x 34 mm recessed carry-handle
   pocket and finger clearance.
-- Inset 210 x 160 mm LCD opening with the LCD visual recessed inside the shell
-  instead of protruding from the front.
+- Inset 210 x 160 mm LCD opening with a 5 mm flat white frame followed by a
+  3 mm wide, 3 mm deep inward-sloping bevel before the LCD visual plane.
 - Rainbow badge and modern front I/O strip with USB-A, SD, USB-C, and status
   slit placeholders.
 - Clean lower front access panel, soft integrated front feet, and long side
