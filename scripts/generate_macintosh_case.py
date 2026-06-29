@@ -10,7 +10,11 @@ HDMI driver board, speakers, and battery.
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
+import zipfile
 from dataclasses import dataclass
+import xml.etree.ElementTree as ET
 
 import FreeCAD as App
 import Part
@@ -20,8 +24,6 @@ import Part
 class Params:
     lcd_width: float = 210.0
     lcd_height: float = 160.0
-    lcd_depth_allowance: float = 8.0
-
     body_width: float = 230.0
     body_depth: float = 285.0
     body_height: float = 275.0
@@ -39,11 +41,6 @@ class Params:
     io_z: float = 50.0
     bottom_plate_thickness: float = 4.0
     lower_service_panel_height: float = 42.0
-
-    driver_board_width: float = 105.0
-    driver_board_height: float = 70.0
-    battery_width: float = 92.0
-    battery_depth: float = 68.0
 
 
 P = Params()
@@ -73,30 +70,9 @@ OBJECT_LABELS_ZH = {
     "front_usb_c_slot": "前侧 USB-C 槽",
     "front_small_status_slit": "前侧小状态灯缝",
     "front_badge_white_backing": "前侧徽标白色底板",
-    "lower_front_clean_access_panel": "前下维护面板",
     "lower_panel_small_led": "下方面板小 LED",
     "lower_panel_round_button": "下方面板圆形按钮",
-    "front_left_integral_foot": "前侧左一体脚垫",
-    "front_right_integral_foot": "前侧右一体脚垫",
     "top_handle_recess_floor": "顶部提手凹槽底面",
-    "rear_badge_base": "后侧徽标底座",
-    "rear_macintosh_nameplate": "后侧 Macintosh 铭牌",
-    "rear_regulatory_label_plate": "后侧认证标签底板",
-    "rear_rohs_mark_block": "后侧 RoHS 标记块",
-    "rear_right_service_column_floor": "后侧右服务栏底面",
-    "rear_right_vertical_cover": "后侧右竖向盖板",
-    "rear_right_small_switch_recess": "后侧右小开关凹槽",
-    "rear_right_small_switch_tab": "后侧右小开关拨片",
-    "rear_right_usb_c_port": "后侧右 USB-C 口",
-    "rear_bottom_port_bay_floor": "后侧底部接口舱底面",
-    "rear_round_audio_port": "后侧圆形音频口",
-    "rear_small_round_port": "后侧小圆接口",
-    "rear_bottom_plate_seam": "后侧底板接缝",
-    "lcd_panel_envelope_210x160x8": "LCD 面板占位 210x160x8",
-    "lcd_left_side_retaining_rail": "LCD 左侧限位导轨",
-    "lcd_right_side_retaining_rail": "LCD 右侧限位导轨",
-    "hdmi_driver_board_keepout_105x70": "HDMI 驱动板避让 105x70",
-    "battery_pack_keepout": "电池包避让区",
     "design_parameters": "设计参数",
 }
 
@@ -107,17 +83,6 @@ def chinese_label_for(name: str) -> str:
 
     numbered_prefixes = (
         ("front_rainbow_badge_stripe_", "前侧彩虹徽标条"),
-        ("left_side_vent_shadow_", "左侧通风槽阴影"),
-        ("right_side_vent_shadow_", "右侧通风槽阴影"),
-        ("rear_left_top_vent_slit_", "后侧左上通风槽"),
-        ("rear_right_top_vent_slit_", "后侧右上通风槽"),
-        ("rear_badge_stripe_", "后侧徽标彩条"),
-        ("rear_regulatory_label_text_line_", "后侧认证标签文字线"),
-        ("rear_dsub_connector_shell_", "后侧 D-Sub 接口外壳"),
-        ("rear_dsub_connector_dark_face_", "后侧 D-Sub 接口深色面"),
-        ("rear_bottom_bay_screw_", "后侧底部接口舱螺钉"),
-        ("bottom_plate_m3_boss_", "底板 M3 螺柱"),
-        ("driver_board_m2_5_standoff_", "驱动板 M2.5 支柱"),
     )
     for prefix, label in numbered_prefixes:
         if name.startswith(prefix):
@@ -135,6 +100,65 @@ def add_shape(doc, name: str, shape, color):
         view.ShapeColor = color[:3]
         view.Transparency = int(color[3]) if len(color) > 3 else 0
     return obj
+
+
+def capture_gui_metadata(model_path: str) -> dict[str, bytes]:
+    """Read GUI/view metadata from an existing FCStd before headless save."""
+    if not os.path.exists(model_path):
+        return {}
+    try:
+        with zipfile.ZipFile(model_path, "r") as archive:
+            if "GuiDocument.xml" not in archive.namelist():
+                return {}
+            return {
+                name: archive.read(name)
+                for name in archive.namelist()
+                if name == "GuiDocument.xml"
+                or name.startswith("thumbnails/")
+                or name.startswith("LineColorArray")
+                or name.startswith("PointColorArray")
+                or name.startswith("ShapeAppearance")
+            }
+    except zipfile.BadZipFile:
+        return {}
+
+
+def filter_gui_document(gui_document: bytes, object_names: set[str]) -> bytes:
+    root = ET.fromstring(gui_document)
+    provider_data = root.find("ViewProviderData")
+    if provider_data is None:
+        return gui_document
+
+    for provider in list(provider_data):
+        if provider.tag == "ViewProvider" and provider.get("name") not in object_names:
+            provider_data.remove(provider)
+    provider_data.set("Count", str(sum(1 for child in provider_data if child.tag == "ViewProvider")))
+    ET.indent(root, space="    ")
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def restore_gui_metadata(model_path: str, gui_metadata: dict[str, bytes], object_names: set[str]) -> None:
+    if not gui_metadata:
+        return
+
+    filtered_metadata = dict(gui_metadata)
+    filtered_metadata["GuiDocument.xml"] = filter_gui_document(gui_metadata["GuiDocument.xml"], object_names)
+
+    fd, temp_path = tempfile.mkstemp(suffix=".FCStd")
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(model_path, "r") as source, zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            metadata_names = set(filtered_metadata)
+            for item in source.infolist():
+                if item.filename in metadata_names:
+                    continue
+                target.writestr(item, source.read(item.filename))
+            for name, data in filtered_metadata.items():
+                target.writestr(name, data)
+        shutil.move(temp_path, model_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def rounded_box(width: float, depth: float, height: float, radius: float, base: App.Vector):
@@ -385,12 +409,6 @@ def make_main_shell():
         for row in range(6):
             shell = shell.cut(box(3.0, 145, 2.4, x, 72, 32 + row * 7))
 
-    # Rear features following the reference: paired top vents, a narrow right
-    # service column, and a low recessed legacy-port bay.
-    for x in (-P.body_width / 2.0 + 18, P.body_width / 2.0 - 52):
-        for row in range(6):
-            shell = shell.cut(rounded_box(34, 8, 2.2, 0.7, App.Vector(x, P.body_depth - 10, P.body_height - 78 + row * 7)))
-
     rear_io_column_cut = rounded_box(
         22,
         9,
@@ -460,128 +478,14 @@ def add_front_visuals(doc, colors):
         add_shape(doc, f"front_rainbow_badge_stripe_{i + 1}", slanted_box(19, 0.45, 4.4, badge_x, front_y_at(badge_z + i * 4.4) - 3.0, badge_z + i * 4.4), color)
 
     lower_front_y = front_y_at(47) - 0.8
-    add_shape(doc, "lower_front_clean_access_panel", rounded_box(142, 2.0, P.lower_service_panel_height + 1, 1.0, App.Vector(-72, lower_front_y, 4)), (0.78, 0.79, 0.74, 0))
     add_shape(doc, "lower_panel_small_led", cyl_y(2.0, 1.0, 50, lower_front_y - 1.2, 24), (0.95, 0.96, 0.90, 0))
     add_shape(doc, "lower_panel_round_button", cyl_y(4.0, 1.0, 84, lower_front_y - 1.2, 24), black)
 
-    # Soft lower feet only; no extra stand.
-    add_shape(doc, "front_left_integral_foot", rounded_box(30, 18, 46, 1.0, App.Vector(-P.body_width / 2.0 + 10, lower_front_y, 0)), white)
-    add_shape(doc, "front_right_integral_foot", rounded_box(30, 18, 46, 1.0, App.Vector(P.body_width / 2.0 - 40, lower_front_y, 0)), white)
-
 
 def add_top_side_back_visuals(doc, colors):
-    white = colors["white"]
     shadow = colors["shadow"]
-    black = colors["black"]
-    gray = colors["gray"]
-    metal = colors["metal"]
 
     add_shape(doc, "top_handle_recess_floor", rounded_box(112, 108, 1.2, 2.0, App.Vector(-56, P.body_depth * 0.49, P.body_height - 34.8)), shadow)
-
-    for side_name, x in (("left", -P.body_width / 2.0 - 0.6), ("right", P.body_width / 2.0 - 0.6)):
-        for row in range(6):
-            add_shape(doc, f"{side_name}_side_vent_shadow_{row + 1}", box(1.0, 145, 2.0, x, 72, 32 + row * 7), black)
-
-    # Slightly proud visual faces keep the rear details legible in STEP/viewer
-    # exports while the shell cutters above define the actual recesses.
-    rear_y = P.body_depth - 0.8
-
-    # Top rear vent fields, left and right of the carry handle.
-    for side_name, x in (("left", -P.body_width / 2.0 + 18), ("right", P.body_width / 2.0 - 52)):
-        for row in range(6):
-            add_shape(doc, f"rear_{side_name}_top_vent_slit_{row + 1}", rounded_box(34, 0.65, 2.6, 0.6, App.Vector(x, P.body_depth + 0.15, P.body_height - 77 + row * 7)), black)
-
-    # Small Macintosh badge on the upper rear-left corner.
-    badge_x = -P.body_width / 2.0 + 21
-    badge_z = 190
-    badge_colors = [
-        (0.33, 0.52, 0.88, 0),
-        (0.83, 0.20, 0.24, 0),
-        (0.93, 0.42, 0.18, 0),
-        (0.93, 0.72, 0.18, 0),
-        (0.43, 0.70, 0.23, 0),
-    ]
-    add_shape(doc, "rear_badge_base", rounded_box(12, 0.8, 14, 0.5, App.Vector(badge_x, rear_y - 0.2, badge_z)), shadow)
-    for i, color in enumerate(badge_colors):
-        add_shape(doc, f"rear_badge_stripe_{i + 1}", box(9, 0.5, 2.2, badge_x + 1.5, rear_y - 0.5, badge_z + 1.5 + i * 2.2), color)
-    add_shape(doc, "rear_macintosh_nameplate", rounded_box(44, 0.8, 14, 0.6, App.Vector(badge_x + 15, rear_y - 0.2, badge_z)), gray)
-
-    # Regulatory label block with shallow engraved line hints.
-    label_x = -17
-    label_z = 74
-    add_shape(doc, "rear_regulatory_label_plate", rounded_box(47, 0.8, 66, 1.0, App.Vector(label_x, rear_y - 0.2, label_z),), metal)
-    for row in range(8):
-        add_shape(doc, f"rear_regulatory_label_text_line_{row + 1}", box(33 - (row % 3) * 5, 0.45, 1.0, label_x + 7, rear_y - 0.55, label_z + 54 - row * 5), gray)
-    add_shape(doc, "rear_rohs_mark_block", box(28, 0.45, 5, label_x + 8, rear_y - 0.6, label_z + 7), black)
-
-    # Tall right rear service column: vertical door, switch, and USB-C opening.
-    column_x = P.body_width / 2.0 - 42
-    add_shape(doc, "rear_right_service_column_floor", rounded_box(22, 0.8, 94, 1.0, App.Vector(column_x, rear_y, 72)), shadow)
-    add_shape(doc, "rear_right_vertical_cover", rounded_box(15, 0.7, 43, 0.8, App.Vector(column_x + 3.5, rear_y - 0.35, 122)), metal)
-    add_shape(doc, "rear_right_small_switch_recess", rounded_box(14, 0.7, 17, 0.8, App.Vector(column_x + 4, rear_y - 0.4, 99)), metal)
-    add_shape(doc, "rear_right_small_switch_tab", rounded_box(8, 0.7, 10, 0.6, App.Vector(column_x + 7, rear_y - 0.7, 102)), (0.78, 0.70, 0.52, 0))
-    add_shape(doc, "rear_right_usb_c_port", rounded_box(9, 0.7, 17, 1.5, App.Vector(column_x + 6.5, rear_y - 0.8, 77)), black)
-
-    # Bottom rear legacy-port bay.
-    bay_x = -P.body_width / 2.0 + 18
-    add_shape(doc, "rear_bottom_port_bay_floor", rounded_box(P.body_width - 36, 0.8, 28, 1.0, App.Vector(bay_x, rear_y, 19)), shadow)
-    for i, x in enumerate((bay_x + 34, bay_x + 70, bay_x + 106), start=1):
-        add_shape(doc, f"rear_dsub_connector_shell_{i}", rounded_box(25, 0.7, 10, 0.8, App.Vector(x, rear_y - 0.45, 28)), metal)
-        add_shape(doc, f"rear_dsub_connector_dark_face_{i}", rounded_box(17, 0.5, 5, 0.5, App.Vector(x + 4, rear_y - 0.75, 30.5)), black)
-    add_shape(doc, "rear_round_audio_port", cyl_y(4.0, 0.8, bay_x + P.body_width - 62, rear_y - 0.7, 32), black)
-    add_shape(doc, "rear_small_round_port", cyl_y(2.6, 0.8, bay_x + P.body_width - 43, rear_y - 0.7, 32), black)
-    for i, x in enumerate((bay_x + 6, bay_x + P.body_width - 48), start=1):
-        add_shape(doc, f"rear_bottom_bay_screw_{i}", cyl_y(2.5, 0.8, x, rear_y - 0.7, 49), black)
-
-    add_shape(doc, "rear_bottom_plate_seam", box(P.body_width - 64, 1.0, 1.2, -P.body_width / 2.0 + 32, P.body_depth - 5, 48), gray)
-
-
-def add_internal_mounts(doc, colors):
-    white = colors["white"]
-    board = colors["board"]
-    glass = colors["glass"]
-    battery = colors["battery"]
-
-    lcd_panel = slanted_box(
-        P.lcd_width,
-        P.lcd_depth_allowance,
-        P.lcd_height,
-        -P.lcd_width / 2.0,
-        front_y_at(P.screen_z) + 8,
-        P.screen_z,
-    )
-    add_shape(doc, "lcd_panel_envelope_210x160x8", lcd_panel, glass)
-
-    for name, x in (("left", -P.lcd_width / 2.0 - 3), ("right", P.lcd_width / 2.0)):
-        add_shape(doc, f"lcd_{name}_side_retaining_rail", slanted_box(3, 12, P.lcd_height + 18, x, front_y_at(P.screen_z - 9) + 16, P.screen_z - 9), white)
-
-    for i, (x, y) in enumerate(
-        [
-            (-P.body_width / 2.0 + 36, 44),
-            (P.body_width / 2.0 - 36, 44),
-            (-P.body_width / 2.0 + 36, P.body_depth - 46),
-            (P.body_width / 2.0 - 36, P.body_depth - 46),
-        ],
-        start=1,
-    ):
-        boss = cyl_z(5.5, 22, x, y, 0).cut(cyl_z(1.8, 24, x, y, -1))
-        add_shape(doc, f"bottom_plate_m3_boss_{i}", boss, white)
-
-    board_y = 82
-    board_z = 26
-    add_shape(doc, "hdmi_driver_board_keepout_105x70", box(P.driver_board_width, 3, P.driver_board_height, -P.driver_board_width / 2.0, board_y, board_z), board)
-    for i, (x, z) in enumerate(
-        [
-            (-P.driver_board_width / 2.0 + 8, board_z + 8),
-            (P.driver_board_width / 2.0 - 8, board_z + 8),
-            (-P.driver_board_width / 2.0 + 8, board_z + P.driver_board_height - 8),
-            (P.driver_board_width / 2.0 - 8, board_z + P.driver_board_height - 8),
-        ],
-        start=1,
-    ):
-        add_shape(doc, f"driver_board_m2_5_standoff_{i}", cyl_z(3.5, 18, x, board_y, z), white)
-
-    add_shape(doc, "battery_pack_keepout", rounded_box(P.battery_width, P.battery_depth, 16, 1.0, App.Vector(-P.battery_width / 2.0, 150, 16)), battery)
 
 
 def save_preview(preview_path: str) -> None:
@@ -638,15 +542,13 @@ def main() -> None:
         "glass": (0.18, 0.22, 0.30, 30),
         "metal": (0.74, 0.76, 0.72, 0),
         "gray": (0.46, 0.48, 0.46, 0),
-        "board": (0.05, 0.32, 0.18, 35),
-        "battery": (0.16, 0.20, 0.24, 45),
     }
 
     add_shape(doc, "single_piece_slanted_main_shell", make_main_shell(), colors["white"])
     add_shape(doc, "removable_bottom_plate", make_bottom_plate(), colors["white"])
     add_front_visuals(doc, colors)
     add_top_side_back_visuals(doc, colors)
-    add_internal_mounts(doc, colors)
+    gui_metadata = capture_gui_metadata(model_path)
 
     params_obj = doc.addObject("App::FeaturePython", "design_parameters")
     params_obj.Label = chinese_label_for("design_parameters")
@@ -660,6 +562,7 @@ def main() -> None:
     doc.recompute()
     set_default_front_view(doc)
     doc.saveAs(model_path)
+    restore_gui_metadata(model_path, gui_metadata, {obj.Name for obj in doc.Objects})
 
     import Import
 
@@ -672,6 +575,7 @@ def main() -> None:
     save_preview(preview_path)
     set_default_front_view(doc)
     doc.save()
+    restore_gui_metadata(model_path, gui_metadata, {obj.Name for obj in doc.Objects})
 
 
 if __name__ == "__main__":

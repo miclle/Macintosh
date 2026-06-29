@@ -18,8 +18,6 @@ does not include a separate keyboard, mouse, stand, or dock.
 The mechanical constraint is the salvaged iPad LCD:
 
 - LCD opening: 210 x 160 mm
-- LCD depth allowance: 8 mm
-- HDMI driver-board keep-out: 105 x 70 mm
 
 The generated enclosure is:
 
@@ -47,14 +45,8 @@ The generated enclosure is:
   3 mm wide, 3 mm deep inward-sloping bevel before the LCD visual plane.
 - Rainbow badge and modern front I/O strip with USB-A, SD, USB-C, and status
   slit placeholders.
-- Clean lower front access panel, soft integrated front feet, and long side
-  lower vents.
-- Reference-style rear shell with paired top vent fields, a small Macintosh
-  badge/nameplate area, regulatory-label plate, right-side service column, and
-  low legacy-port bay.
-- LCD retaining rails, bars, and four M3-style mounting bosses.
-- 105 x 70 mm HDMI driver-board keep-out with standoffs.
-- Internal keep-out for a battery pack.
+- Lower front LED/button details.
+- Unsupported rear decorative parts are omitted.
 
 ## Regenerate
 
@@ -64,7 +56,6 @@ Run the generator inside FreeCAD's Python environment:
 freecadcmd scripts/generate_macintosh_case.py
 ```
 
-Measure the real LCD metal frame, HDMI driver board, battery, and any optional modules
-before fabrication. Adjust the `Params` values in
-`scripts/generate_macintosh_case.py`, regenerate, then export/slice the main
-shell and bottom plate for your printer and material.
+Measure the real LCD metal frame and any optional modules before fabrication.
+Adjust the `Params` values in `scripts/generate_macintosh_case.py`, regenerate,
+then export/slice the main shell and bottom plate for your printer and material.
