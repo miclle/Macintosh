@@ -1,7 +1,7 @@
 """Generate a compact retro iPad LCD enclosure for 3D printing.
 
-The model follows the user's latest reference photos: a clean one-piece main
-shell, slanted front face, lower front lip that projects forward, slightly
+The model follows the user's latest reference photos: split front/rear main
+shells, slanted front face, lower front lip that projects forward, slightly
 lower rear top with clipped back corners, a recessed top carry handle, side
 vents, modern front I/O, and a removable bottom plate for installing the LCD,
 HDMI driver board, speakers, and battery.
@@ -54,7 +54,8 @@ def screen_frame_margin() -> float:
 DOCUMENT_LABEL_ZH = "Macintosh iPad LCD 外壳"
 
 OBJECT_LABELS_ZH = {
-    "single_piece_slanted_main_shell": "一体式倾斜主外壳",
+    "front_case_shell": "前半主外壳",
+    "rear_case_shell": "后半主外壳",
     "removable_bottom_plate": "可拆卸底板",
     "sloped_white_screen_bezel_surface": "白色屏幕斜面边框",
     "sloped_black_lcd_bezel_visual": "黑色 LCD 斜面边框",
@@ -127,9 +128,56 @@ def filter_gui_document(gui_document: bytes, object_names: set[str]) -> bytes:
     for provider in list(provider_data):
         if provider.tag == "ViewProvider" and provider.get("name") not in object_names:
             provider_data.remove(provider)
+        elif provider.tag == "ViewProvider":
+            ensure_visible_view_provider(provider)
+
+    provider_names = {
+        provider.get("name")
+        for provider in provider_data
+        if provider.tag == "ViewProvider"
+    }
+    next_tree_rank = 1 + max(
+        (
+            int(provider.get("treeRank", "0"))
+            for provider in provider_data
+            if provider.tag == "ViewProvider"
+        ),
+        default=0,
+    )
+    for name in sorted(object_names - provider_names):
+        provider = make_visible_view_provider(name, next_tree_rank)
+        provider_data.append(provider)
+        next_tree_rank += 1
+
     provider_data.set("Count", str(sum(1 for child in provider_data if child.tag == "ViewProvider")))
     ET.indent(root, space="    ")
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def ensure_visible_view_provider(provider: ET.Element) -> None:
+    properties = provider.find("Properties")
+    if properties is None:
+        properties = ET.SubElement(provider, "Properties", {"Count": "0", "TransientCount": "0"})
+
+    visibility = properties.find("Property[@name='Visibility']")
+    if visibility is None:
+        visibility = ET.SubElement(
+            properties,
+            "Property",
+            {"name": "Visibility", "type": "App::PropertyBool", "status": "1"},
+        )
+    visibility.clear()
+    visibility.set("name", "Visibility")
+    visibility.set("type", "App::PropertyBool")
+    visibility.set("status", "1")
+    ET.SubElement(visibility, "Bool", {"value": "true"})
+    properties.set("Count", str(sum(1 for child in properties if child.tag == "Property")))
+
+
+def make_visible_view_provider(name: str, tree_rank: int) -> ET.Element:
+    provider = ET.Element("ViewProvider", {"name": name, "expanded": "0", "treeRank": str(tree_rank)})
+    ensure_visible_view_provider(provider)
+    return provider
 
 
 def restore_gui_metadata(model_path: str, gui_metadata: dict[str, bytes], object_names: set[str]) -> None:
@@ -195,6 +243,45 @@ def prism_from_yz(width: float, yz_points: list[tuple[float, float]], x_center: 
         points.append(App.Vector(x0, yz_points[0][0], yz_points[0][1]))
     poly = Part.makePolygon(points)
     return Part.Face(poly).extrude(App.Vector(width, 0, 0))
+
+
+def case_split_profile() -> list[tuple[float, float]]:
+    front_top_z = P.screen_z + P.lcd_height + screen_frame_margin() + 2
+    lower_split_y = 18
+    initial_upper_split_y = 8
+    forward_shift_fraction = 2 / 3
+    upper_split_y = initial_upper_split_y - (lower_split_y - initial_upper_split_y) * forward_shift_fraction
+    split_jog_z = P.io_z + 8
+    split_offset = upper_split_y - front_y_at(split_jog_z)
+    return [
+        (lower_split_y, -20),
+        (lower_split_y, split_jog_z),
+        (front_y_at(split_jog_z) + split_offset, split_jog_z),
+        (front_y_at(front_top_z) + split_offset, front_top_z),
+        (front_y_at(P.body_height + 20) + split_offset, P.body_height + 20),
+    ]
+
+
+def split_mask_from_profile(split_profile: list[tuple[float, float]], side: str):
+    y_min = -80
+    y_max = P.body_depth + 80
+    z_min = split_profile[0][1]
+    z_max = split_profile[-1][1]
+
+    if side == "front":
+        yz_points = [(y_min, z_min), *split_profile, (y_min, z_max)]
+    elif side == "rear":
+        yz_points = [
+            split_profile[0],
+            (y_max, z_min),
+            (y_max, z_max),
+            split_profile[-1],
+            *reversed(split_profile[1:-1]),
+        ]
+    else:
+        raise ValueError(f"Unknown case split side: {side}")
+
+    return prism_from_yz(P.body_width + 20, yz_points)
 
 
 def slanted_box(width: float, depth: float, height: float, x: float, y: float, z: float):
@@ -358,7 +445,11 @@ def make_main_shell():
 
     shell = soft_edges(shell)
     bevel = make_screen_frame_surfaces()
-    return Part.makeCompound([shell, bevel])
+    case = Part.makeCompound([shell, bevel])
+    split_profile = case_split_profile()
+    front_case = case.common(split_mask_from_profile(split_profile, "front"))
+    rear_case = case.common(split_mask_from_profile(split_profile, "rear"))
+    return front_case, rear_case
 
 
 def make_bottom_plate():
@@ -468,7 +559,9 @@ def main() -> None:
         "gray": (0.46, 0.48, 0.46, 0),
     }
 
-    add_shape(doc, "single_piece_slanted_main_shell", make_main_shell(), colors["white"])
+    front_case, rear_case = make_main_shell()
+    add_shape(doc, "front_case_shell", front_case, colors["white"])
+    add_shape(doc, "rear_case_shell", rear_case, colors["white"])
     add_shape(doc, "removable_bottom_plate", make_bottom_plate(), colors["white"])
     add_front_visuals(doc, colors)
     gui_metadata = capture_gui_metadata(model_path)

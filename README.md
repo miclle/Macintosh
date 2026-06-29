@@ -4,8 +4,9 @@ FreeCAD model for a compact retro iPad LCD enclosure. The current version
 follows the latest reference photos: a slanted front face, lower front lip that
 projects forward, clean deep side body, slightly lowered rear top with clipped
 rear corners, deep recessed top carry handle, inset LCD opening, rainbow badge,
-modern front I/O, side vents, and a removable bottom plate. It intentionally
-does not include a separate keyboard, mouse, stand, or dock.
+modern front I/O, side vents, and separate front/rear shell parts with a
+removable bottom plate. It intentionally does not include a separate keyboard,
+mouse, stand, or dock.
 
 ## Generated files
 
@@ -29,7 +30,11 @@ The generated enclosure is:
 
 ## Included model features
 
-- Single-piece printable main shell with a separate removable bottom plate.
+- Printable front and rear main shell parts with a separate removable bottom
+  plate.
+- Side split line with a lower vertical section parallel to the recessed front
+  step, a short horizontal jog, and an upper section parallel to the front
+  slope.
 - Slanted front face that continues below the front I/O recess; the lower
   screen/control area projects forward like the reference photos.
 - The top surface is one continuous main plane from the front edge to the rear

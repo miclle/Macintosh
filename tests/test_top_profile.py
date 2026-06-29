@@ -35,10 +35,14 @@ class TopProfileTest(unittest.TestCase):
         script = Path(__file__).resolve().parents[1] / "scripts" / "generate_macintosh_case.py"
         source = script.read_text(encoding="utf-8")
         tree = ast.parse(source)
+        make_main_shell = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "make_main_shell"
+        )
 
         assignments = [
             node
-            for node in ast.walk(tree)
+            for node in ast.walk(make_main_shell)
             if isinstance(node, ast.Assign)
             and any(isinstance(target, ast.Name) and target.id == "front_bottom_z" for target in node.targets)
         ]
