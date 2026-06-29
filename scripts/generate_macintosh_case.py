@@ -14,6 +14,7 @@ import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass
+import math
 import xml.etree.ElementTree as ET
 
 import FreeCAD as App
@@ -25,12 +26,12 @@ class Params:
     lcd_width: float = 210.0
     lcd_height: float = 160.0
     body_width: float = 230.0
-    body_depth: float = 285.0
+    body_depth: float = 228.0
     body_height: float = 275.0
     body_corner_radius: float = 2.0
     edge_soft_radius: float = 0.45
     wall: float = 3.0
-    front_tilt_deg: float = -12.0
+    front_tilt_deg: float = -7.0
 
     screen_z: float = 92.0
     screen_flat_frame_width: float = 5.0
@@ -50,16 +51,11 @@ def screen_frame_margin() -> float:
     return P.screen_flat_frame_width + P.screen_bezel_slope_width
 
 
-def screen_frame_bottom_z() -> float:
-    return P.screen_z - screen_frame_margin()
-
-
 DOCUMENT_LABEL_ZH = "Macintosh iPad LCD 外壳"
 
 OBJECT_LABELS_ZH = {
     "single_piece_slanted_main_shell": "一体式倾斜主外壳",
     "removable_bottom_plate": "可拆卸底板",
-    "flat_white_screen_frame_surface": "白色屏幕平面边框",
     "sloped_white_screen_bezel_surface": "白色屏幕斜面边框",
     "sloped_black_lcd_bezel_visual": "黑色 LCD 斜面边框",
     "lcd_dark_glass_visual": "LCD 深色玻璃",
@@ -72,7 +68,6 @@ OBJECT_LABELS_ZH = {
     "front_badge_white_backing": "前侧徽标白色底板",
     "lower_panel_small_led": "下方面板小 LED",
     "lower_panel_round_button": "下方面板圆形按钮",
-    "top_handle_recess_floor": "顶部提手凹槽底面",
     "design_parameters": "设计参数",
 }
 
@@ -212,46 +207,6 @@ def slanted_box(width: float, depth: float, height: float, x: float, y: float, z
     return shape
 
 
-def slanted_rect_frame(
-    outer_width: float,
-    outer_height: float,
-    inner_width: float,
-    inner_height: float,
-    depth: float,
-    x_center: float,
-    y: float,
-    z: float,
-):
-    """Flat rectangular frame on the tilted front plane."""
-    outer_left = -outer_width / 2.0
-    outer_right = outer_width / 2.0
-    inner_left = -inner_width / 2.0
-    inner_right = inner_width / 2.0
-    margin_z = (outer_height - inner_height) / 2.0
-    inner_bottom = margin_z
-    inner_top = margin_z + inner_height
-
-    def v(px: float, py: float, pz: float) -> App.Vector:
-        return App.Vector(px, py, pz)
-
-    faces = []
-    quads = [
-        [v(outer_left, 0, 0), v(outer_right, 0, 0), v(inner_right, 0, inner_bottom), v(inner_left, 0, inner_bottom)],
-        [v(outer_right, 0, outer_height), v(outer_left, 0, outer_height), v(inner_left, 0, inner_top), v(inner_right, 0, inner_top)],
-        [v(outer_left, 0, outer_height), v(outer_left, 0, 0), v(inner_left, 0, inner_bottom), v(inner_left, 0, inner_top)],
-        [v(outer_right, 0, 0), v(outer_right, 0, outer_height), v(inner_right, 0, inner_top), v(inner_right, 0, inner_bottom)],
-    ]
-    for quad in quads:
-        faces.append(Part.Face(Part.makePolygon(quad + [quad[0]])))
-
-    shape = Part.makeCompound(faces)
-    shape.Placement = App.Placement(
-        App.Vector(x_center, y, z),
-        App.Rotation(App.Vector(1, 0, 0), P.front_tilt_deg),
-    )
-    return shape
-
-
 def slanted_bezel_frame(
     outer_width: float,
     outer_height: float,
@@ -294,22 +249,9 @@ def slanted_bezel_frame(
 
 
 def make_screen_frame_surfaces():
-    total_margin = screen_frame_margin()
-    outer_w = P.lcd_width + 2 * total_margin
-    outer_h = P.lcd_height + 2 * total_margin
     slope_outer_w = P.lcd_width + 2 * P.screen_bezel_slope_width
     slope_outer_h = P.lcd_height + 2 * P.screen_bezel_slope_width
 
-    flat_frame = slanted_rect_frame(
-        outer_w,
-        outer_h,
-        slope_outer_w,
-        slope_outer_h,
-        0.8,
-        0,
-        front_y_at(P.screen_z - total_margin) + 0.6,
-        P.screen_z - total_margin,
-    )
     bevel = slanted_bezel_frame(
         slope_outer_w,
         slope_outer_h,
@@ -320,33 +262,31 @@ def make_screen_frame_surfaces():
         front_y_at(P.screen_z - P.screen_bezel_slope_width) + 0.6,
         P.screen_z - P.screen_bezel_slope_width,
     )
-    return flat_frame, bevel
+    return bevel
 
 
 def front_y_at(z: float) -> float:
     # Approximate the slanted front plane. The lower front is forward, while
     # the screen top recedes toward the body like the reference photo.
-    return P.screen_lower_forward_y + (z - 58.0) * 0.212
+    front_tilt_slope = math.tan(math.radians(abs(P.front_tilt_deg)))
+    return P.screen_lower_forward_y + (z - 58.0) * front_tilt_slope
 
 
 def make_main_shell():
     screen_margin = screen_frame_margin()
     front_top_z = P.screen_z + P.lcd_height + screen_margin + 2
-    front_bottom_z = screen_frame_bottom_z()
+    front_bottom_z = P.io_z - 8
     front_lower_y = front_y_at(front_bottom_z)
-    front_step_rear_y = front_lower_y
-    top_front_bevel_y = front_y_at(front_top_z) + 26
-    top_front_bevel_z = front_top_z + 3
+    front_step_rear_y = -10
     side_profile = [
         (-10, 0),
         (P.body_depth - 8, 0),
         (P.body_depth - 3, P.body_height - 42),
         (P.body_depth - 25, P.body_height - 20),
-        (top_front_bevel_y, top_front_bevel_z),
         (front_y_at(front_top_z), front_top_z),
         (front_lower_y, front_bottom_z),
+        (front_step_rear_y, front_bottom_z),
         (front_step_rear_y, 0),
-        (-10, 0),
     ]
     outer = prism_from_yz(P.body_width, side_profile)
     try:
@@ -371,8 +311,6 @@ def make_main_shell():
         App.Vector(-P.body_width / 2.0 + 21, 24, -8),
     )
 
-    recess_w = P.lcd_width + 2 * screen_margin
-    recess_h = P.lcd_height + 2 * screen_margin
     screen_cut = slanted_box(
         P.lcd_width + 3,
         42,
@@ -380,14 +318,6 @@ def make_main_shell():
         -P.lcd_width / 2.0 - 1.5,
         front_y_at(P.screen_z) - 24,
         P.screen_z - 1.5,
-    )
-    screen_recess_cut = slanted_box(
-        recess_w,
-        16,
-        recess_h,
-        -recess_w / 2.0,
-        front_y_at(P.screen_z - screen_margin) - 10,
-        P.screen_z - screen_margin,
     )
 
     io_cut = slanted_box(126, 18, 27, -20, front_y_at(P.io_z) - 12, P.io_z - 4)
@@ -401,7 +331,7 @@ def make_main_shell():
     )
 
     shell = outer.cut(inner)
-    for cutter in (bottom_service_opening, screen_recess_cut, screen_cut, io_cut, handle_cut):
+    for cutter in (bottom_service_opening, screen_cut, io_cut, handle_cut):
         shell = shell.cut(cutter)
 
     # Actual side vent openings, cut through both side walls.
@@ -427,8 +357,8 @@ def make_main_shell():
         shell = shell.cut(cutter)
 
     shell = soft_edges(shell)
-    flat_frame, bevel = make_screen_frame_surfaces()
-    return Part.makeCompound([shell, flat_frame, bevel])
+    bevel = make_screen_frame_surfaces()
+    return Part.makeCompound([shell, bevel])
 
 
 def make_bottom_plate():
@@ -464,8 +394,8 @@ def add_front_visuals(doc, colors):
     add_shape(doc, "front_usb_c_slot", slanted_box(15, 0.45, 6, 92, front_y_at(P.io_z + 15) - 2.5, P.io_z + 15), black)
     add_shape(doc, "front_small_status_slit", slanted_box(12, 0.45, 3.5, 82, front_y_at(P.io_z + 17) - 2.6, P.io_z + 17), black)
 
-    badge_x = -P.body_width / 2.0 + 57
-    badge_z = 41
+    badge_x = -P.body_width / 2.0 + 47
+    badge_z = P.io_z - 4
     add_shape(doc, "front_badge_white_backing", slanted_box(23, 0.7, 28, badge_x - 2, front_y_at(badge_z) - 2.4, badge_z - 2), (0.80, 0.81, 0.78, 0))
     rainbow = [
         (0.43, 0.70, 0.23, 0),
@@ -480,12 +410,6 @@ def add_front_visuals(doc, colors):
     lower_front_y = front_y_at(47) - 0.8
     add_shape(doc, "lower_panel_small_led", cyl_y(2.0, 1.0, 50, lower_front_y - 1.2, 24), (0.95, 0.96, 0.90, 0))
     add_shape(doc, "lower_panel_round_button", cyl_y(4.0, 1.0, 84, lower_front_y - 1.2, 24), black)
-
-
-def add_top_side_back_visuals(doc, colors):
-    shadow = colors["shadow"]
-
-    add_shape(doc, "top_handle_recess_floor", rounded_box(112, 108, 1.2, 2.0, App.Vector(-56, P.body_depth * 0.49, P.body_height - 34.8)), shadow)
 
 
 def save_preview(preview_path: str) -> None:
@@ -547,7 +471,6 @@ def main() -> None:
     add_shape(doc, "single_piece_slanted_main_shell", make_main_shell(), colors["white"])
     add_shape(doc, "removable_bottom_plate", make_bottom_plate(), colors["white"])
     add_front_visuals(doc, colors)
-    add_top_side_back_visuals(doc, colors)
     gui_metadata = capture_gui_metadata(model_path)
 
     params_obj = doc.addObject("App::FeaturePython", "design_parameters")

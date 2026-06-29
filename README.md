@@ -21,8 +21,8 @@ The mechanical constraint is the salvaged iPad LCD:
 
 The generated enclosure is:
 
-- Body: 230 x 285 x 275 mm
-- Front face tilt: 12 degrees
+- Body: 230 x 228 x 275 mm
+- Front face tilt: 7 degrees
 - Shell wall: 3 mm
 - Soft edge radius: 0.45 mm
 - Removable bottom plate: 4 mm
@@ -30,19 +30,20 @@ The generated enclosure is:
 ## Included model features
 
 - Single-piece printable main shell with a separate removable bottom plate.
-- Slanted front face; the lower screen/control area projects forward like the
-  reference photos.
-- The top-front transition is a short rear-facing bevel instead of a sharp
-  peak.
-- The lower front transition is a rear-set step instead of a continuous slope.
+- Slanted front face that continues below the front I/O recess; the lower
+  screen/control area projects forward like the reference photos.
+- The top surface is one continuous main plane from the front edge to the rear
+  clipped section instead of a segmented top-front bevel.
+- The lower front transition is a rear-set step below the front I/O recess
+  instead of ending the slope at the LCD frame.
 - The LCD installs from the removable bottom opening, so the top/front shell
   above the LCD bay stays closed.
-- Deep side body with one continuous main top slope, a small top-front bevel,
-  and clipped rear top corners.
+- Deep side body with one continuous main top plane and clipped rear top
+  corners.
 - Clean top surface with a deeper 126 x 128 x 34 mm recessed carry-handle
   pocket and finger clearance.
-- Inset 210 x 160 mm LCD opening with a 5 mm flat white frame followed by a
-  3 mm wide, 3 mm deep inward-sloping bevel before the LCD visual plane.
+- Inset 210 x 160 mm LCD opening with a flush 5 mm front-shell border followed
+  by a 3 mm wide, 3 mm deep inward-sloping bevel before the LCD visual plane.
 - Rainbow badge and modern front I/O strip with USB-A, SD, USB-C, and status
   slit placeholders.
 - Lower front LED/button details.
