@@ -49,12 +49,91 @@ class Params:
 P = Params()
 
 
+def screen_frame_margin() -> float:
+    return P.screen_flat_frame_width + P.screen_bezel_slope_width
+
+
+def screen_frame_bottom_z() -> float:
+    return P.screen_z - screen_frame_margin()
+
+
+DOCUMENT_LABEL_ZH = "Macintosh iPad LCD 外壳"
+
+OBJECT_LABELS_ZH = {
+    "single_piece_slanted_main_shell": "一体式倾斜主外壳",
+    "removable_bottom_plate": "可拆卸底板",
+    "flat_white_screen_frame_surface": "白色屏幕平面边框",
+    "sloped_white_screen_bezel_surface": "白色屏幕斜面边框",
+    "sloped_black_lcd_bezel_visual": "黑色 LCD 斜面边框",
+    "lcd_dark_glass_visual": "LCD 深色玻璃",
+    "front_io_recess_shadow": "前侧接口凹槽阴影",
+    "front_usb_a_left": "前侧左 USB-A 口",
+    "front_usb_a_right": "前侧右 USB-A 口",
+    "front_sd_slot": "前侧 SD 卡槽",
+    "front_usb_c_slot": "前侧 USB-C 槽",
+    "front_small_status_slit": "前侧小状态灯缝",
+    "front_badge_white_backing": "前侧徽标白色底板",
+    "lower_front_clean_access_panel": "前下维护面板",
+    "lower_panel_small_led": "下方面板小 LED",
+    "lower_panel_round_button": "下方面板圆形按钮",
+    "front_left_integral_foot": "前侧左一体脚垫",
+    "front_right_integral_foot": "前侧右一体脚垫",
+    "top_handle_recess_floor": "顶部提手凹槽底面",
+    "rear_badge_base": "后侧徽标底座",
+    "rear_macintosh_nameplate": "后侧 Macintosh 铭牌",
+    "rear_regulatory_label_plate": "后侧认证标签底板",
+    "rear_rohs_mark_block": "后侧 RoHS 标记块",
+    "rear_right_service_column_floor": "后侧右服务栏底面",
+    "rear_right_vertical_cover": "后侧右竖向盖板",
+    "rear_right_small_switch_recess": "后侧右小开关凹槽",
+    "rear_right_small_switch_tab": "后侧右小开关拨片",
+    "rear_right_usb_c_port": "后侧右 USB-C 口",
+    "rear_bottom_port_bay_floor": "后侧底部接口舱底面",
+    "rear_round_audio_port": "后侧圆形音频口",
+    "rear_small_round_port": "后侧小圆接口",
+    "rear_bottom_plate_seam": "后侧底板接缝",
+    "lcd_panel_envelope_210x160x8": "LCD 面板占位 210x160x8",
+    "lcd_left_side_retaining_rail": "LCD 左侧限位导轨",
+    "lcd_right_side_retaining_rail": "LCD 右侧限位导轨",
+    "hdmi_driver_board_keepout_105x70": "HDMI 驱动板避让 105x70",
+    "battery_pack_keepout": "电池包避让区",
+    "design_parameters": "设计参数",
+}
+
+
+def chinese_label_for(name: str) -> str:
+    if name in OBJECT_LABELS_ZH:
+        return OBJECT_LABELS_ZH[name]
+
+    numbered_prefixes = (
+        ("front_rainbow_badge_stripe_", "前侧彩虹徽标条"),
+        ("left_side_vent_shadow_", "左侧通风槽阴影"),
+        ("right_side_vent_shadow_", "右侧通风槽阴影"),
+        ("rear_left_top_vent_slit_", "后侧左上通风槽"),
+        ("rear_right_top_vent_slit_", "后侧右上通风槽"),
+        ("rear_badge_stripe_", "后侧徽标彩条"),
+        ("rear_regulatory_label_text_line_", "后侧认证标签文字线"),
+        ("rear_dsub_connector_shell_", "后侧 D-Sub 接口外壳"),
+        ("rear_dsub_connector_dark_face_", "后侧 D-Sub 接口深色面"),
+        ("rear_bottom_bay_screw_", "后侧底部接口舱螺钉"),
+        ("bottom_plate_m3_boss_", "底板 M3 螺柱"),
+        ("driver_board_m2_5_standoff_", "驱动板 M2.5 支柱"),
+    )
+    for prefix, label in numbered_prefixes:
+        if name.startswith(prefix):
+            return f"{label} {name.removeprefix(prefix)}"
+
+    return name
+
+
 def add_shape(doc, name: str, shape, color):
     obj = doc.addObject("Part::Feature", name)
+    obj.Label = chinese_label_for(name)
     obj.Shape = shape
-    if hasattr(obj, "ViewObject"):
-        obj.ViewObject.ShapeColor = color[:3]
-        obj.ViewObject.Transparency = int(color[3]) if len(color) > 3 else 0
+    view = getattr(obj, "ViewObject", None)
+    if view is not None:
+        view.ShapeColor = color[:3]
+        view.Transparency = int(color[3]) if len(color) > 3 else 0
     return obj
 
 
@@ -190,6 +269,36 @@ def slanted_bezel_frame(
     return shape
 
 
+def make_screen_frame_surfaces():
+    total_margin = screen_frame_margin()
+    outer_w = P.lcd_width + 2 * total_margin
+    outer_h = P.lcd_height + 2 * total_margin
+    slope_outer_w = P.lcd_width + 2 * P.screen_bezel_slope_width
+    slope_outer_h = P.lcd_height + 2 * P.screen_bezel_slope_width
+
+    flat_frame = slanted_rect_frame(
+        outer_w,
+        outer_h,
+        slope_outer_w,
+        slope_outer_h,
+        0.8,
+        0,
+        front_y_at(P.screen_z - total_margin) + 0.6,
+        P.screen_z - total_margin,
+    )
+    bevel = slanted_bezel_frame(
+        slope_outer_w,
+        slope_outer_h,
+        P.lcd_width,
+        P.lcd_height,
+        P.screen_bezel_recess_depth,
+        0,
+        front_y_at(P.screen_z - P.screen_bezel_slope_width) + 0.6,
+        P.screen_z - P.screen_bezel_slope_width,
+    )
+    return flat_frame, bevel
+
+
 def front_y_at(z: float) -> float:
     # Approximate the slanted front plane. The lower front is forward, while
     # the screen top recedes toward the body like the reference photo.
@@ -197,11 +306,11 @@ def front_y_at(z: float) -> float:
 
 
 def make_main_shell():
-    screen_margin = P.screen_flat_frame_width + P.screen_bezel_slope_width
+    screen_margin = screen_frame_margin()
     front_top_z = P.screen_z + P.lcd_height + screen_margin + 2
-    front_bottom_z = 58
+    front_bottom_z = screen_frame_bottom_z()
     front_lower_y = front_y_at(front_bottom_z)
-    front_step_rear_y = -11
+    front_step_rear_y = front_lower_y
     top_front_bevel_y = front_y_at(front_top_z) + 26
     top_front_bevel_z = front_top_z + 3
     side_profile = [
@@ -212,8 +321,6 @@ def make_main_shell():
         (top_front_bevel_y, top_front_bevel_z),
         (front_y_at(front_top_z), front_top_z),
         (front_lower_y, front_bottom_z),
-        (front_lower_y, 47),
-        (front_step_rear_y, 47),
         (front_step_rear_y, 0),
         (-10, 0),
     ]
@@ -301,7 +408,9 @@ def make_main_shell():
     for cutter in (rear_io_column_cut, rear_port_bay_cut):
         shell = shell.cut(cutter)
 
-    return soft_edges(shell)
+    shell = soft_edges(shell)
+    flat_frame, bevel = make_screen_frame_surfaces()
+    return Part.makeCompound([shell, flat_frame, bevel])
 
 
 def make_bottom_plate():
@@ -325,39 +434,7 @@ def add_front_visuals(doc, colors):
     shadow = colors["shadow"]
     black = colors["black"]
     glass = colors["glass"]
-    metal = colors["metal"]
 
-    total_margin = P.screen_flat_frame_width + P.screen_bezel_slope_width
-    outer_w = P.lcd_width + 2 * total_margin
-    outer_h = P.lcd_height + 2 * total_margin
-    slope_outer_w = P.lcd_width + 2 * P.screen_bezel_slope_width
-    slope_outer_h = P.lcd_height + 2 * P.screen_bezel_slope_width
-    outer_y = front_y_at(P.screen_z - total_margin) + 0.6
-    outer_z = P.screen_z - total_margin
-
-    flat_frame = slanted_rect_frame(
-        outer_w,
-        outer_h,
-        slope_outer_w,
-        slope_outer_h,
-        0.8,
-        0,
-        outer_y,
-        outer_z,
-    )
-    add_shape(doc, "flat_white_screen_frame_surface", flat_frame, white)
-
-    bevel = slanted_bezel_frame(
-        slope_outer_w,
-        slope_outer_h,
-        P.lcd_width,
-        P.lcd_height,
-        P.screen_bezel_recess_depth,
-        0,
-        front_y_at(P.screen_z - P.screen_bezel_slope_width) + 0.6,
-        P.screen_z - P.screen_bezel_slope_width,
-    )
-    add_shape(doc, "sloped_white_screen_bezel_surface", bevel, shadow)
     inner_y = front_y_at(P.screen_z) + P.screen_bezel_recess_depth
     add_shape(doc, "sloped_black_lcd_bezel_visual", slanted_box(P.lcd_width, 0.9, P.lcd_height, -P.lcd_width / 2.0, inner_y, P.screen_z), black)
     add_shape(doc, "lcd_dark_glass_visual", slanted_box(P.lcd_width - 12, 0.8, P.lcd_height - 12, -P.lcd_width / 2.0 + 6, inner_y + 0.8, P.screen_z + 6), glass)
@@ -382,13 +459,14 @@ def add_front_visuals(doc, colors):
     for i, color in enumerate(rainbow):
         add_shape(doc, f"front_rainbow_badge_stripe_{i + 1}", slanted_box(19, 0.45, 4.4, badge_x, front_y_at(badge_z + i * 4.4) - 3.0, badge_z + i * 4.4), color)
 
-    add_shape(doc, "lower_front_clean_access_panel", rounded_box(142, 2.0, P.lower_service_panel_height, 1.0, App.Vector(-72, -11.0, 4)), (0.78, 0.79, 0.74, 0))
-    add_shape(doc, "lower_panel_small_led", cyl_y(2.0, 1.0, 50, -12.2, 24), (0.95, 0.96, 0.90, 0))
-    add_shape(doc, "lower_panel_round_button", cyl_y(4.0, 1.0, 84, -12.2, 24), black)
+    lower_front_y = front_y_at(47) - 0.8
+    add_shape(doc, "lower_front_clean_access_panel", rounded_box(142, 2.0, P.lower_service_panel_height + 1, 1.0, App.Vector(-72, lower_front_y, 4)), (0.78, 0.79, 0.74, 0))
+    add_shape(doc, "lower_panel_small_led", cyl_y(2.0, 1.0, 50, lower_front_y - 1.2, 24), (0.95, 0.96, 0.90, 0))
+    add_shape(doc, "lower_panel_round_button", cyl_y(4.0, 1.0, 84, lower_front_y - 1.2, 24), black)
 
     # Soft lower feet only; no extra stand.
-    add_shape(doc, "front_left_integral_foot", rounded_box(30, 18, 46, 1.0, App.Vector(-P.body_width / 2.0 + 10, -10, 0)), white)
-    add_shape(doc, "front_right_integral_foot", rounded_box(30, 18, 46, 1.0, App.Vector(P.body_width / 2.0 - 40, -10, 0)), white)
+    add_shape(doc, "front_left_integral_foot", rounded_box(30, 18, 46, 1.0, App.Vector(-P.body_width / 2.0 + 10, lower_front_y, 0)), white)
+    add_shape(doc, "front_right_integral_foot", rounded_box(30, 18, 46, 1.0, App.Vector(P.body_width / 2.0 - 40, lower_front_y, 0)), white)
 
 
 def add_top_side_back_visuals(doc, colors):
@@ -518,6 +596,25 @@ def save_preview(preview_path: str) -> None:
         print(f"Preview not saved: {exc}")
 
 
+def set_default_front_view(doc) -> None:
+    try:
+        import FreeCADGui as Gui
+
+        App.setActiveDocument(doc.Name)
+        Gui.ActiveDocument = Gui.getDocument(doc.Name)
+        view = Gui.ActiveDocument.ActiveView
+        for obj in doc.Objects:
+            if hasattr(obj, "ViewObject"):
+                obj.ViewObject.Visibility = True
+        view.viewFront()
+        Gui.runCommand("Std_ViewFront", 0)
+        Gui.SendMsgToActiveView("ViewFit")
+        Gui.runCommand("Std_ViewFitAll", 0)
+        Gui.updateGui()
+    except Exception:
+        pass
+
+
 def main() -> None:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_dir = os.path.dirname(script_dir)
@@ -532,6 +629,7 @@ def main() -> None:
     if doc_name in App.listDocuments():
         App.closeDocument(doc_name)
     doc = App.newDocument(doc_name)
+    doc.Label = DOCUMENT_LABEL_ZH
 
     colors = {
         "white": (0.88, 0.90, 0.86, 0),
@@ -551,6 +649,7 @@ def main() -> None:
     add_internal_mounts(doc, colors)
 
     params_obj = doc.addObject("App::FeaturePython", "design_parameters")
+    params_obj.Label = chinese_label_for("design_parameters")
     params_obj.addProperty("App::PropertyFloat", "LcdWidthMm", "LCD").LcdWidthMm = P.lcd_width
     params_obj.addProperty("App::PropertyFloat", "LcdHeightMm", "LCD").LcdHeightMm = P.lcd_height
     params_obj.addProperty("App::PropertyFloat", "FrontTiltDeg", "Case").FrontTiltDeg = abs(P.front_tilt_deg)
@@ -559,7 +658,7 @@ def main() -> None:
     params_obj.addProperty("App::PropertyFloat", "BodyHeightMm", "Case").BodyHeightMm = P.body_height
 
     doc.recompute()
-    App.setActiveDocument(doc.Name)
+    set_default_front_view(doc)
     doc.saveAs(model_path)
 
     import Import
@@ -571,6 +670,8 @@ def main() -> None:
     print(f"LCD opening: {P.lcd_width:.1f} x {P.lcd_height:.1f} mm")
     print(f"Front tilt: {abs(P.front_tilt_deg):.1f} deg")
     save_preview(preview_path)
+    set_default_front_view(doc)
+    doc.save()
 
 
 if __name__ == "__main__":
