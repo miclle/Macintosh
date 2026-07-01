@@ -41,14 +41,18 @@ The generated enclosure is:
   clipped section instead of a segmented top-front bevel.
 - The lower front transition is a rear-set step below the front I/O recess
   instead of ending the slope at the LCD frame.
-- The LCD installs from the removable bottom opening, so the top/front shell
-  above the LCD bay stays closed.
+- The LCD installs from inside the enclosure against the front shell, using
+  four integral screw bosses around the LCD opening; the removable bottom
+  opening remains the service access path.
 - Deep side body with one continuous main top plane and clipped rear top
   corners.
 - Clean top surface with a deeper 126 x 128 x 34 mm recessed carry-handle
   pocket and finger clearance.
 - Inset 210 x 160 mm LCD opening with a flush 5 mm front-shell border followed
-  by a 3 mm wide, 3 mm deep inward-sloping bevel before the LCD visual plane.
+  by a 3 mm wide, 30 degree inward-sloping bevel toward the LCD center before
+  the LCD visual plane.
+- Internal LCD retaining bosses: 4.2 mm boss radius, 1.35 mm screw pilot hole
+  radius, 9 mm boss depth, positioned just outside the LCD opening.
 - Rainbow badge and modern front I/O strip with USB-A, SD, USB-C, and status
   slit placeholders.
 - Lower front LED/button details.

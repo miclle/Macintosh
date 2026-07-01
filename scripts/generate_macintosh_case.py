@@ -4,7 +4,8 @@ The model follows the user's latest reference photos: split front/rear main
 shells, slanted front face, lower front lip that projects forward, slightly
 lower rear top with clipped back corners, a recessed top carry handle, side
 vents, modern front I/O, and a removable bottom plate for installing the LCD,
-HDMI driver board, speakers, and battery.
+HDMI driver board, speakers, and battery. The LCD is retained from inside the
+front shell with integral screw bosses around the screen opening.
 """
 
 from __future__ import annotations
@@ -36,8 +37,15 @@ class Params:
     screen_z: float = 92.0
     screen_flat_frame_width: float = 5.0
     screen_bezel_slope_width: float = 3.0
-    screen_bezel_recess_depth: float = 3.0
+    screen_bezel_slope_angle_deg: float = 30.0
+    screen_bezel_boolean_overlap: float = 0.6
+    screen_cut_bezel_overlap: float = 0.2
     screen_lower_forward_y: float = -28.0
+    lcd_mount_boss_radius: float = 4.2
+    lcd_mount_screw_hole_radius: float = 1.35
+    lcd_mount_boss_depth: float = 9.0
+    lcd_mount_screw_inset: float = 4.0
+    front_inner_relief_depth: float = 42.0
 
     io_z: float = 50.0
     bottom_plate_thickness: float = 4.0
@@ -49,6 +57,16 @@ P = Params()
 
 def screen_frame_margin() -> float:
     return P.screen_flat_frame_width + P.screen_bezel_slope_width
+
+
+def screen_bezel_recess_depth() -> float:
+    return P.screen_bezel_slope_width * math.tan(math.radians(P.screen_bezel_slope_angle_deg))
+
+
+def screen_bezel_recess_origin_z() -> float:
+    rotation = math.radians(P.front_tilt_deg)
+    recess_depth = screen_bezel_recess_depth()
+    return P.screen_z - recess_depth * math.sin(rotation) - P.screen_bezel_slope_width * math.cos(rotation)
 
 
 DOCUMENT_LABEL_ZH = "Macintosh iPad LCD 外壳"
@@ -294,62 +312,91 @@ def slanted_box(width: float, depth: float, height: float, x: float, y: float, z
     return shape
 
 
-def slanted_bezel_frame(
-    outer_width: float,
-    outer_height: float,
-    inner_width: float,
-    inner_height: float,
-    recess_depth: float,
-    x: float,
-    y: float,
-    z: float,
-):
-    """Four equal-width faces that slope inward to the LCD opening."""
-    outer_left = -outer_width / 2.0
-    outer_right = outer_width / 2.0
-    inner_left = -inner_width / 2.0
-    inner_right = inner_width / 2.0
-    margin_z = (outer_height - inner_height) / 2.0
-    inner_bottom = margin_z
-    inner_top = margin_z + inner_height
+def make_screen_bezel_recess_cut():
+    recess_depth = screen_bezel_recess_depth()
+    front_overlap = P.screen_bezel_boolean_overlap
+    slope_outer_w = P.lcd_width + 2 * P.screen_bezel_slope_width
+    slope_outer_h = P.lcd_height + 2 * P.screen_bezel_slope_width
+    outer_left = -slope_outer_w / 2.0
+    outer_right = slope_outer_w / 2.0
+    inner_left = -P.lcd_width / 2.0
+    inner_right = P.lcd_width / 2.0
+    inner_bottom = P.screen_bezel_slope_width
+    inner_top = inner_bottom + P.lcd_height
+    front_y = -front_overlap
+    inner_y = recess_depth
+    overlap_inset = front_overlap * P.screen_bezel_slope_width / recess_depth
 
     def v(px: float, py: float, pz: float) -> App.Vector:
         return App.Vector(px, py, pz)
 
-    faces = []
-    quads = [
-        # bottom, top, left, right
-        [v(outer_left, 0, 0), v(outer_right, 0, 0), v(inner_right, recess_depth, inner_bottom), v(inner_left, recess_depth, inner_bottom)],
-        [v(outer_right, 0, outer_height), v(outer_left, 0, outer_height), v(inner_left, recess_depth, inner_top), v(inner_right, recess_depth, inner_top)],
-        [v(outer_left, 0, outer_height), v(outer_left, 0, 0), v(inner_left, recess_depth, inner_bottom), v(inner_left, recess_depth, inner_top)],
-        [v(outer_right, 0, 0), v(outer_right, 0, outer_height), v(inner_right, recess_depth, inner_top), v(inner_right, recess_depth, inner_bottom)],
-    ]
-    for quad in quads:
-        faces.append(Part.Face(Part.makePolygon(quad + [quad[0]])))
+    outer_bottom_left = v(outer_left - overlap_inset, front_y, -overlap_inset)
+    outer_bottom_right = v(outer_right + overlap_inset, front_y, -overlap_inset)
+    outer_top_right = v(outer_right + overlap_inset, front_y, slope_outer_h + overlap_inset)
+    outer_top_left = v(outer_left - overlap_inset, front_y, slope_outer_h + overlap_inset)
+    inner_bottom_left = v(inner_left, inner_y, inner_bottom)
+    inner_bottom_right = v(inner_right, inner_y, inner_bottom)
+    inner_top_right = v(inner_right, inner_y, inner_top)
+    inner_top_left = v(inner_left, inner_y, inner_top)
 
-    shape = Part.makeCompound(faces)
-    shape.Placement = App.Placement(
-        App.Vector(x, y, z),
+    quads = [
+        [outer_bottom_left, outer_bottom_right, inner_bottom_right, inner_bottom_left],
+        [outer_top_right, outer_top_left, inner_top_left, inner_top_right],
+        [outer_top_left, outer_bottom_left, inner_bottom_left, inner_top_left],
+        [outer_bottom_right, outer_top_right, inner_top_right, inner_bottom_right],
+        [outer_bottom_right, outer_bottom_left, outer_top_left, outer_top_right],
+        [inner_bottom_left, inner_bottom_right, inner_top_right, inner_top_left],
+    ]
+    faces = [Part.Face(Part.makePolygon(quad + [quad[0]])) for quad in quads]
+    cutter = Part.Solid(Part.Shell(faces))
+    cutter.Placement = App.Placement(
+        App.Vector(
+            0,
+            front_y_at(screen_bezel_recess_origin_z()),
+            screen_bezel_recess_origin_z(),
+        ),
         App.Rotation(App.Vector(1, 0, 0), P.front_tilt_deg),
     )
-    return shape
+    return cutter
 
 
-def make_screen_frame_surfaces():
-    slope_outer_w = P.lcd_width + 2 * P.screen_bezel_slope_width
-    slope_outer_h = P.lcd_height + 2 * P.screen_bezel_slope_width
+def make_lcd_internal_mounts():
+    mount_x = P.lcd_width / 2.0 + P.lcd_mount_screw_inset
+    bottom_z = P.screen_z - P.lcd_mount_screw_inset
+    top_z = P.screen_z + P.lcd_height + P.lcd_mount_screw_inset
+    boss_y_offset = screen_bezel_recess_depth() + 1.2
+    expected_mount_count = 4
+    mount_points = [
+        (-mount_x, bottom_z),
+        (mount_x, bottom_z),
+        (-mount_x, top_z),
+        (mount_x, top_z),
+    ]
+    if len(mount_points) != expected_mount_count:
+        raise ValueError("LCD mount layout must keep four corner screw bosses")
 
-    bevel = slanted_bezel_frame(
-        slope_outer_w,
-        slope_outer_h,
-        P.lcd_width,
-        P.lcd_height,
-        P.screen_bezel_recess_depth,
-        0,
-        front_y_at(P.screen_z - P.screen_bezel_slope_width) + 0.6,
-        P.screen_z - P.screen_bezel_slope_width,
+    bosses = []
+    holes = []
+    for x, z in mount_points:
+        y = front_y_at(z) + boss_y_offset
+        bosses.append(cyl_y(P.lcd_mount_boss_radius, P.lcd_mount_boss_depth, x, y, z))
+        holes.append(cyl_y(P.lcd_mount_screw_hole_radius, P.lcd_mount_boss_depth + 2, x, y - 1, z))
+
+    mount_body = Part.makeCompound(bosses)
+    return mount_body.cut(Part.makeCompound(holes))
+
+
+def make_front_inner_relief_cut(front_bottom_z: float, front_top_z: float):
+    relief_height = front_top_z - front_bottom_z
+    relief_width = P.body_width - 2 * P.wall
+    return slanted_box(
+        relief_width,
+        P.front_inner_relief_depth,
+        relief_height,
+        -relief_width / 2.0,
+        front_y_at(front_bottom_z) + P.wall,
+        front_bottom_z,
     )
-    return bevel
 
 
 def front_y_at(z: float) -> float:
@@ -398,13 +445,15 @@ def make_main_shell():
         App.Vector(-P.body_width / 2.0 + 21, 24, -8),
     )
 
+    screen_cut_y = front_y_at(P.screen_z) + screen_bezel_recess_depth() - P.screen_cut_bezel_overlap
+    screen_cut_depth = P.front_inner_relief_depth - screen_bezel_recess_depth() + P.screen_cut_bezel_overlap
     screen_cut = slanted_box(
-        P.lcd_width + 3,
-        42,
-        P.lcd_height + 3,
-        -P.lcd_width / 2.0 - 1.5,
-        front_y_at(P.screen_z) - 24,
-        P.screen_z - 1.5,
+        P.lcd_width,
+        screen_cut_depth,
+        P.lcd_height,
+        -P.lcd_width / 2.0,
+        screen_cut_y,
+        P.screen_z,
     )
 
     io_cut = slanted_box(126, 18, 27, -20, front_y_at(P.io_z) - 12, P.io_z - 4)
@@ -417,9 +466,14 @@ def make_main_shell():
         App.Vector(-63, P.body_depth * 0.47, P.body_height - 34),
     )
 
+    front_inner_relief_cut = make_front_inner_relief_cut(front_bottom_z, front_top_z)
+    screen_bezel_recess_cut = make_screen_bezel_recess_cut()
     shell = outer.cut(inner)
-    for cutter in (bottom_service_opening, screen_cut, io_cut, handle_cut):
+    for cutter in (bottom_service_opening, front_inner_relief_cut, screen_bezel_recess_cut, screen_cut, io_cut, handle_cut):
         shell = shell.cut(cutter)
+
+    lcd_mounts = make_lcd_internal_mounts()
+    shell = shell.fuse(lcd_mounts)
 
     # Actual side vent openings, cut through both side walls.
     for x in (-P.body_width / 2.0 - 1.2, P.body_width / 2.0 - 1.2):
@@ -443,9 +497,7 @@ def make_main_shell():
     for cutter in (rear_io_column_cut, rear_port_bay_cut):
         shell = shell.cut(cutter)
 
-    shell = soft_edges(shell)
-    bevel = make_screen_frame_surfaces()
-    case = Part.makeCompound([shell, bevel])
+    case = soft_edges(shell)
     split_profile = case_split_profile()
     front_case = case.common(split_mask_from_profile(split_profile, "front"))
     rear_case = case.common(split_mask_from_profile(split_profile, "rear"))
@@ -474,9 +526,8 @@ def add_front_visuals(doc, colors):
     black = colors["black"]
     glass = colors["glass"]
 
-    inner_y = front_y_at(P.screen_z) + P.screen_bezel_recess_depth
-    add_shape(doc, "sloped_black_lcd_bezel_visual", slanted_box(P.lcd_width, 0.9, P.lcd_height, -P.lcd_width / 2.0, inner_y, P.screen_z), black)
-    add_shape(doc, "lcd_dark_glass_visual", slanted_box(P.lcd_width - 12, 0.8, P.lcd_height - 12, -P.lcd_width / 2.0 + 6, inner_y + 0.8, P.screen_z + 6), glass)
+    inner_y = front_y_at(P.screen_z) + screen_bezel_recess_depth()
+    add_shape(doc, "lcd_dark_glass_visual", slanted_box(P.lcd_width, 0.8, P.lcd_height, -P.lcd_width / 2.0, inner_y, P.screen_z), glass)
 
     add_shape(doc, "front_io_recess_shadow", slanted_box(126, 0.8, 26, -20, front_y_at(P.io_z) - 1.8, P.io_z - 3), shadow)
     add_shape(doc, "front_usb_a_left", slanted_box(22, 0.45, 10, -12, front_y_at(P.io_z + 4) - 2.4, P.io_z + 4), black)
